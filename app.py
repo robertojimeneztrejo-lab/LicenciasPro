@@ -627,6 +627,20 @@ def render_e1_expander(herramientas: list):
 # ─── MAIN APP ─────────────────────────────────────────────────────────────────
 
 def main():
+
+    # ── Session state init — MUST be first, before any widget or logic ───
+    for key, default in [
+        ("e1_done", False),
+        ("e1_result", None),
+        ("model", None),
+        ("corrected", False),
+        ("correction_applied", False),
+        ("all_results", []),
+        ("bloque_num", 0),
+    ]:
+        if key not in st.session_state:
+            st.session_state[key] = default
+
     render_hero()
 
     api_key = get_api_key()
@@ -665,15 +679,6 @@ def main():
         )
 
     run = st.button("🔍 Buscar Herramientas", use_container_width=True)
-
-    # Session state init
-    for key, default in [
-        ("e1_done", False), ("e1_result", None), ("model", None),
-        ("corrected", False), ("correction_applied", False),
-        ("all_results", []), ("bloque_num", 0),
-    ]:
-        if key not in st.session_state:
-            st.session_state[key] = default
 
     # Validate
     if (run or st.session_state.e1_done) and not api_key:
