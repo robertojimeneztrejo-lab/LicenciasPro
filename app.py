@@ -637,6 +637,8 @@ def main():
         ("correction_applied", False),
         ("all_results", []),
         ("bloque_num", 0),
+        ("tema_guardado", ""),
+        ("cantidad_guardada", 10),
     ]:
         if key not in st.session_state:
             st.session_state[key] = default
@@ -690,13 +692,15 @@ def main():
         if not tema.strip():
             st.error("⚠️ Ingresa un tema de búsqueda.")
             return
-        # Reset everything
+        # Reset everything and save tema/cantidad
         for key, val in [
             ("e1_done", False), ("e1_result", None), ("model", None),
             ("corrected", False), ("correction_applied", False),
             ("all_results", []), ("bloque_num", 0),
         ]:
             st.session_state[key] = val
+        st.session_state.tema_guardado = tema
+        st.session_state.cantidad_guardada = cantidad
 
         st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
         try:
@@ -727,8 +731,9 @@ def main():
         herramientas_e1 = result1.get("herramientas_validacion", [])
         model         = st.session_state.model or get_model(api_key)
         st.session_state.model = model
-        # Recover tema from result
-        tema = result1.get("tema", tema)
+        # Recover tema and cantidad from session_state (survive reruns)
+        tema = st.session_state.tema_guardado or result1.get("tema", "")
+        cantidad = st.session_state.cantidad_guardada
 
         st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
         render_stage_indicator(1)
@@ -903,6 +908,7 @@ def main():
         if buscar_mas:
             nombres_e1 = [h.get("nombre","") for h in
                           st.session_state.e1_result.get("herramientas_validacion", [])]
+            tema = st.session_state.tema_guardado
             num_inicio = next_start
 
             with st.spinner(f"Generando Bloque {next_bloque}..."):
