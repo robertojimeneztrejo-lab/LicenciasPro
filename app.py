@@ -4,13 +4,14 @@ import json
 import re
 import io
 import time
-from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-from openpyxl.utils import get_column_letter
+import urllib.request
+import urllib.error
+import urllib.parse
+from datetime import datetime
 
 # ─── PAGE CONFIG ─────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Buscador Licencias",
+    page_title="LicenceHunt",
     page_icon="🎓",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -19,106 +20,208 @@ st.set_page_config(
 # ─── CSS ─────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap');
-:root{--teal:#0d9488;--teal-lt:#14b8a6;--navy:#0f172a;--slate:#1e293b;--muted:#475569;--border:#1e3a5f;--card:#0f2137;--amber:#f59e0b;}
-html,body,[data-testid="stAppViewContainer"]{background:var(--navy)!important;font-family:'DM Sans',sans-serif;color:#e2e8f0;}
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&display=swap');
+:root{--ink:#0a0f1e;--ink2:#111827;--card:#131c2e;--border:#1e2d45;--teal:#06b6d4;--teal-dk:#0891b2;--gold:#f59e0b;--green:#10b981;--red:#f43f5e;--muted:#4b6080;--text:#cbd5e1;--bright:#f1f5f9;}
+*,*::before,*::after{box-sizing:border-box;}
+html,body,[data-testid="stAppViewContainer"]{background:var(--ink)!important;font-family:'DM Sans',sans-serif;color:var(--text);}
 #MainMenu,footer,header{visibility:hidden;}[data-testid="stToolbar"]{display:none;}
-.hero{background:#0c3b4a;border:1px solid var(--border);border-radius:16px;padding:2.2rem 2.8rem;margin-bottom:2rem;}
-.hero-badge{display:inline-block;background:rgba(13,148,136,.2);border:1px solid var(--teal);color:var(--teal-lt);font-size:.72rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase;padding:.3rem .8rem;border-radius:99px;margin-bottom:1rem;}
-.hero h1{font-family:'DM Serif Display',serif;font-size:2.4rem;line-height:1.15;color:#f1f5f9;margin:0 0 .7rem;font-weight:400;}
-.hero h1 span{color:var(--teal-lt);}
-.hero p{color:#94a3b8;font-size:.95rem;max-width:620px;line-height:1.65;margin:0;}
-.stage-row{display:flex;gap:.75rem;margin-bottom:1.5rem;flex-wrap:wrap;}
-.stage-pill{display:flex;align-items:center;gap:.5rem;background:var(--card);border:1px solid var(--border);border-radius:99px;padding:.4rem .9rem;font-size:.8rem;font-weight:500;color:#94a3b8;}
-.stage-pill.active{background:rgba(13,148,136,.15);border-color:var(--teal);color:var(--teal-lt);}
-.stage-dot{width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.6;}
-.config-label{font-size:.75rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:.45rem;}
-[data-testid="stTextInput"] input,[data-testid="stTextArea"] textarea,[data-testid="stSelectbox"] select{background:#0a1929!important;border:1px solid var(--border)!important;border-radius:8px!important;color:#e2e8f0!important;font-family:'DM Sans',sans-serif!important;}
-.stButton>button{background:linear-gradient(135deg,var(--teal) 0%,#0d7a70 100%)!important;color:white!important;font-family:'DM Sans',sans-serif!important;font-weight:600!important;font-size:.88rem!important;border:none!important;border-radius:10px!important;padding:.6rem 1.6rem!important;transition:all .2s!important;}
-.stButton>button:hover{transform:translateY(-1px)!important;box-shadow:0 6px 20px rgba(13,148,136,.35)!important;}
-.stDownloadButton>button{background:linear-gradient(135deg,#065f46 0%,#047857 100%)!important;color:white!important;font-family:'DM Sans',sans-serif!important;font-weight:600!important;border:1px solid #059669!important;border-radius:10px!important;padding:.6rem 1.6rem!important;}
-.status-box{background:var(--card);border:1px solid var(--border);border-left:3px solid var(--teal);border-radius:0 8px 8px 0;padding:.9rem 1.1rem;font-size:.88rem;color:#94a3b8;margin:.8rem 0;}
-.feedback-box{background:rgba(245,158,11,.05);border:1px solid rgba(245,158,11,.3);border-left:3px solid var(--amber);border-radius:0 10px 10px 0;padding:1.2rem 1.4rem;margin:1.2rem 0;}
-.feedback-title{font-size:.75rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--amber);margin-bottom:.5rem;}
-.feedback-body{font-size:.88rem;color:#cbd5e1;line-height:1.55;margin:0;}
-.correction-box{background:rgba(13,148,136,.06);border:1px solid rgba(13,148,136,.3);border-left:3px solid var(--teal-lt);border-radius:0 8px 8px 0;padding:.9rem 1.1rem;margin:.8rem 0;font-size:.88rem;color:#94a3b8;}
-.result-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:1.4rem;margin-bottom:.9rem;transition:border-color .2s;}
-.result-card:hover{border-color:var(--teal);}
-.result-num{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;background:rgba(13,148,136,.2);border:1px solid var(--teal);border-radius:50%;font-size:.78rem;font-weight:700;color:var(--teal-lt);margin-bottom:.65rem;}
-.result-name{font-family:'DM Serif Display',serif;font-size:1.15rem;color:#f1f5f9;margin-bottom:.25rem;}
-.result-url{font-size:.8rem;color:var(--teal-lt);margin-bottom:.9rem;word-break:break-all;}
-.result-field{margin-bottom:.7rem;}
-.result-field-label{font-size:.7rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:.22rem;}
-.result-field-value{font-size:.86rem;color:#cbd5e1;line-height:1.55;}
-.block-header{display:flex;align-items:center;gap:.6rem;margin-bottom:.8rem;}
-.block-badge{background:rgba(13,148,136,.15);border:1px solid rgba(13,148,136,.3);color:var(--teal-lt);font-size:.7rem;font-weight:600;padding:.22rem .7rem;border-radius:99px;}
+.hero-wrap{position:relative;padding:2.8rem 3.5rem 2.2rem;margin-bottom:2rem;border-radius:20px;overflow:hidden;background:var(--card);border:1px solid var(--border);}
+.hero-wrap::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 60% 80% at 90% 20%,rgba(6,182,212,.12) 0%,transparent 60%),radial-gradient(ellipse 40% 60% at 10% 80%,rgba(245,158,11,.06) 0%,transparent 60%);pointer-events:none;}
+.hero-eyebrow{font-family:'Syne',sans-serif;font-size:.68rem;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--teal);margin-bottom:.8rem;display:flex;align-items:center;gap:.5rem;}
+.hero-eyebrow::before{content:'';display:inline-block;width:24px;height:1px;background:var(--teal);}
+.hero-title{font-family:'Syne',sans-serif;font-size:2.8rem;font-weight:800;line-height:1.05;color:var(--bright);margin:0 0 .7rem;letter-spacing:-.02em;}
+.hero-title span{color:var(--teal);}
+.hero-sub{color:var(--muted);font-size:.92rem;max-width:560px;line-height:1.65;}
+.hero-stats{display:flex;gap:2rem;margin-top:1.8rem;}
+.hero-stat-val{font-family:'Syne',sans-serif;font-size:1.5rem;font-weight:700;color:var(--teal);}
+.hero-stat-lbl{font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;}
+.section-title{font-family:'Syne',sans-serif;font-size:.65rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin-bottom:.9rem;display:flex;align-items:center;gap:.6rem;}
+.section-title::after{content:'';flex:1;height:1px;background:var(--border);}
+.filter-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:1.5rem;margin-bottom:1.1rem;}
+.stButton>button{background:linear-gradient(135deg,var(--teal-dk),#0e7490)!important;color:white!important;font-family:'Syne',sans-serif!important;font-weight:700!important;font-size:.88rem!important;letter-spacing:.04em!important;border:none!important;border-radius:12px!important;padding:.72rem 2rem!important;transition:all .2s!important;}
+.stButton>button:hover{transform:translateY(-2px)!important;box-shadow:0 8px 24px rgba(6,182,212,.3)!important;}
+[data-testid="stTextInput"] input,[data-testid="stTextArea"] textarea,[data-testid="stSelectbox"]>div>div{background:var(--ink2)!important;border:1px solid var(--border)!important;border-radius:10px!important;color:var(--bright)!important;font-family:'DM Sans',sans-serif!important;}
+[data-testid="stTextInput"] input:focus,[data-testid="stTextArea"] textarea:focus{border-color:var(--teal)!important;box-shadow:0 0 0 3px rgba(6,182,212,.15)!important;}
+.stage-bar{display:flex;gap:0;margin-bottom:2rem;background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;}
+.stage-item{flex:1;padding:.7rem 1rem;text-align:center;font-size:.7rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border-right:1px solid var(--border);transition:all .2s;}
+.stage-item:last-child{border-right:none;}
+.stage-item.done{background:rgba(6,182,212,.08);color:var(--teal);}
+.stage-item.active{background:rgba(6,182,212,.15);color:var(--bright);}
+.rcard{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:1.5rem;margin-bottom:.9rem;position:relative;overflow:hidden;transition:border-color .2s,transform .15s;}
+.rcard:hover{border-color:var(--teal);transform:translateY(-1px);}
+.rcard::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--teal),transparent);opacity:0;transition:opacity .2s;}
+.rcard:hover::before{opacity:1;}
+.rcard-num{position:absolute;top:1.3rem;right:1.3rem;font-family:'Syne',sans-serif;font-size:1.8rem;font-weight:800;color:var(--border);line-height:1;}
+.rcard-badges{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.75rem;}
+.badge{display:inline-flex;align-items:center;gap:.3rem;font-size:.66rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:.2rem .6rem;border-radius:6px;}
+.badge-teal{background:rgba(6,182,212,.12);color:var(--teal);border:1px solid rgba(6,182,212,.25);}
+.badge-gold{background:rgba(245,158,11,.12);color:var(--gold);border:1px solid rgba(245,158,11,.25);}
+.badge-green{background:rgba(16,185,129,.12);color:var(--green);border:1px solid rgba(16,185,129,.25);}
+.badge-red{background:rgba(244,63,94,.12);color:var(--red);border:1px solid rgba(244,63,94,.25);}
+.badge-saved{background:rgba(16,185,129,.18);color:#34d399;border:1px solid rgba(52,211,153,.35);}
+.rcard-name{font-family:'Syne',sans-serif;font-size:1.25rem;font-weight:700;color:var(--bright);margin-bottom:.22rem;}
+.rcard-url{font-size:.78rem;color:var(--teal);margin-bottom:1rem;word-break:break-all;}
+.rcard-grid{display:grid;grid-template-columns:1fr 1fr;gap:.9rem;}
+.rcard-field-lbl{font-size:.66rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:.28rem;}
+.rcard-field-val{font-size:.84rem;color:var(--text);line-height:1.55;}
+.block-hdr{display:flex;align-items:center;gap:.8rem;margin:1.8rem 0 1rem;}
+.block-num-badge{font-family:'Syne',sans-serif;font-size:.68rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;background:rgba(6,182,212,.12);border:1px solid rgba(6,182,212,.3);color:var(--teal);padding:.28rem .75rem;border-radius:8px;}
 .block-range{font-size:.8rem;color:var(--muted);}
-.more-block{background:rgba(13,148,136,.04);border:1px dashed rgba(13,148,136,.35);border-radius:12px;padding:1.5rem 1.8rem;margin:1.2rem 0;text-align:center;}
-.more-badge{display:inline-block;background:rgba(13,148,136,.15);border:1px solid rgba(13,148,136,.3);color:var(--teal-lt);font-size:.68rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;padding:.22rem .7rem;border-radius:99px;margin-bottom:.6rem;}
-.more-title{font-size:.95rem;color:#e2e8f0;font-weight:500;margin-bottom:.3rem;}
-.more-sub{font-size:.82rem;color:#64748b;margin-bottom:.9rem;}
-.divider{height:1px;background:linear-gradient(90deg,transparent,var(--border),transparent);margin:1.5rem 0;}
-[data-testid="stMetric"]{background:var(--card)!important;border:1px solid var(--border)!important;border-radius:10px!important;padding:1rem!important;}
-[data-testid="stMetricValue"]{color:var(--teal-lt)!important;font-family:'DM Serif Display',serif!important;}
-[data-testid="stMetricLabel"]{color:var(--muted)!important;font-size:.75rem!important;}
-[data-testid="stExpander"]{background:var(--card)!important;border:1px solid var(--border)!important;border-radius:10px!important;}
-[data-testid="stSidebar"]{background:var(--slate)!important;border-right:1px solid var(--border)!important;}
-::-webkit-scrollbar{width:6px;}::-webkit-scrollbar-track{background:var(--navy);}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
+.more-block{background:linear-gradient(135deg,rgba(6,182,212,.04),rgba(245,158,11,.03));border:1px dashed rgba(6,182,212,.3);border-radius:16px;padding:1.8rem;text-align:center;margin:1.4rem 0;}
+.more-title{font-family:'Syne',sans-serif;font-size:1rem;font-weight:700;color:var(--bright);margin-bottom:.35rem;}
+.more-sub{font-size:.82rem;color:var(--muted);margin-bottom:1.1rem;}
+.fb-box{background:rgba(245,158,11,.04);border:1px solid rgba(245,158,11,.25);border-left:3px solid var(--gold);border-radius:0 12px 12px 0;padding:1.1rem 1.4rem;margin:1.1rem 0;}
+.fb-title{font-family:'Syne',sans-serif;font-size:.66rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);margin-bottom:.45rem;}
+.fb-body{font-size:.86rem;color:var(--text);line-height:1.6;}
+.status-box{background:var(--card);border:1px solid var(--border);border-left:3px solid var(--teal);border-radius:0 10px 10px 0;padding:.85rem 1.1rem;font-size:.86rem;color:var(--muted);margin:.7rem 0;}
+.ok-box{background:rgba(16,185,129,.05);border:1px solid rgba(16,185,129,.25);border-left:3px solid var(--green);border-radius:0 10px 10px 0;padding:.85rem 1.1rem;font-size:.86rem;color:var(--text);margin:.7rem 0;}
+.save-block{background:rgba(16,185,129,.04);border:1px solid rgba(16,185,129,.2);border-radius:14px;padding:1.2rem 1.5rem;margin:1rem 0;display:flex;align-items:center;gap:1rem;flex-wrap:wrap;}
+.save-info{flex:1;font-size:.84rem;color:var(--muted);line-height:1.5;}
+.save-info strong{color:var(--green);}
+.div{height:1px;background:var(--border);margin:1.6rem 0;}
+[data-testid="stMetric"]{background:var(--card)!important;border:1px solid var(--border)!important;border-radius:12px!important;padding:1rem!important;}
+[data-testid="stMetricValue"]{color:var(--teal)!important;font-family:'Syne',sans-serif!important;font-weight:700!important;}
+[data-testid="stMetricLabel"]{color:var(--muted)!important;font-size:.7rem!important;}
+[data-testid="stExpander"]{background:var(--card)!important;border:1px solid var(--border)!important;border-radius:12px!important;}
+[data-testid="stSidebar"]{background:var(--ink2)!important;border-right:1px solid var(--border)!important;}
+[data-testid="stMultiSelect"]>div{background:var(--ink2)!important;border-color:var(--border)!important;border-radius:10px!important;}
+span[data-baseweb="tag"]{background:rgba(6,182,212,.15)!important;border:1px solid rgba(6,182,212,.3)!important;}
+::-webkit-scrollbar{width:5px;}::-webkit-scrollbar-track{background:var(--ink);}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
 </style>
 """, unsafe_allow_html=True)
 
-# ─── PROMPTS ─────────────────────────────────────────────────────────────────
-SYSTEM_PROMPT = """Eres un analista de software experto especializado en herramientas para el sector académico y universitario.
-Tu tarea es encontrar herramientas digitales (softwares, web apps o apps) siguiendo un proceso de etapas estrictas.
-REGLAS: Responde SIEMPRE en JSON válido sin texto extra ni bloques de código. Solo el JSON puro."""
+# ─── CONSTANTS ───────────────────────────────────────────────────────────────
 
-ETAPA1_PROMPT = """ETAPA 1 — FILTRO DE MODELO DE NEGOCIO
+VALIDATION_TYPES = {
+    "form_manual": ("📋", "Formulario + aprobación manual",         "Llena un form; un humano aprueba"),
+    "email_edu":   ("📧", "Correo .edu (USA/internacional)",        "Verificación con dominio .edu"),
+    "email_uni":   ("🏫", "Correo universitario cualquier dominio", "Acepta .edu.mx, .edu.co, .ac.uk, etc."),
+    "documento":   ("📄", "Verificación con documento",             "Credencial, constancia o carta institucional"),
+    "grant":       ("🏆", "Grant / propuesta de investigación",     "Propuesta formal para aprobación"),
+    "contacto":    ("📞", "Contacto directo con el equipo",         "Email a sales/support para solicitar acceso"),
+}
 
-Tema: {tema}
+DEPTH_LEVELS = {
+    "startup":   ("🌱", "Startups / Beta",      "Herramientas en fase temprana, < 2 años"),
+    "nicho":     ("🔬", "Nicho / Especializado", "Muy específicas, bajo volumen de búsqueda"),
+    "emergente": ("📡", "Emergente general",     "Poco conocidas, no en top 5 Google"),
+    "todas":     ("🌐", "Todas las capas",       "Sin restricción de popularidad"),
+}
 
-Encuentra herramientas que cumplan TODAS estas condiciones:
-1. De PAGO para el público general.
-2. 100% GRATUITO para académicos/estudiantes/instituciones — sin costo para ellos NI su institución.
-3. Acceso gratuito NO automático: requiere formulario, cuestionario o correo .edu con aprobación manual.
-4. EXCLUIR si solo ofrecen descuento.
-5. EXCLUIR si requiere que la universidad haya comprado licencia.
+BENEFICIARY_TYPES = {
+    "estudiantes":    "Estudiantes universitarios",
+    "profesores":     "Profesores / Docentes",
+    "investigadores": "Investigadores",
+    "universidades":  "Instituciones / Universidades",
+}
 
-Busca frases como: "Apply for Academic Grant", "Request Educational License", "Academic Application Form".
-Si el plan PRO se regala a académicos tras verificación manual → SÍ es válido.
+# ─── GOOGLE SHEETS (Apps Script bridge) ──────────────────────────────────────
 
-Devuelve exactamente 5 herramientas en este JSON:
-{{"etapa":1,"tema":"{tema}","herramientas_validacion":[{{"nombre":"...","url":"...","descripcion_breve":"...","evidencia_pago":"...","evidencia_acceso_educativo":"..."}}]}}"""
+def get_sheets_config():
+    """Lee la URL del Apps Script y la URL pública del CSV desde st.secrets."""
+    try:
+        script_url = st.secrets["APPS_SCRIPT_URL"]
+        csv_url    = st.secrets.get("SHEETS_CSV_URL", "")
+        return script_url, csv_url
+    except Exception:
+        return "", ""
 
-ETAPA1_CORRECCION_PROMPT = """CORRECCIÓN ETAPA 1
+@st.cache_data(ttl=120)
+def load_saved_names(csv_url: str) -> list:
+    """Carga los nombres ya guardados en el Sheet (para deduplicación)."""
+    if not csv_url:
+        return []
+    try:
+        req = urllib.request.Request(csv_url,
+              headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=8) as r:
+            content = r.read().decode("utf-8")
+        names = []
+        for line in content.strip().split("\n")[1:]:  # skip header
+            if line.strip():
+                parts = line.split(",")
+                if parts:
+                    name = parts[0].strip().strip('"')
+                    if name:
+                        names.append(name)
+        return names
+    except Exception:
+        return []
 
-Resultados anteriores: {resultados_anteriores}
-Instrucciones del usuario: "{instrucciones_usuario}"
-Tema: {tema}
+def save_block_to_sheets(script_url: str, items: list, tema: str) -> tuple:
+    """
+    Guarda una lista de herramientas en Google Sheets via Apps Script doGet.
+    Columnas: Nombre | Link | Contacto | Tipo | Uso | Tema | Fecha
+    Returns (ok: bool, message: str)
+    """
+    if not script_url:
+        return False, "No se encontró APPS_SCRIPT_URL en Secrets."
 
-Aplica las correcciones. Mantén exactamente 5 herramientas.
+    saved = 0
+    errors = []
+    fecha = datetime.now().strftime("%Y-%m-%d")
 
-{{"etapa":1,"tema":"{tema}","herramientas_validacion":[{{"nombre":"...","url":"...","descripcion_breve":"...","evidencia_pago":"...","evidencia_acceso_educativo":"..."}}]}}"""
+    for item in items:
+        val_key  = item.get("tipo_validacion_key", "")
+        val_name = VALIDATION_TYPES.get(val_key, ("", "Sin clasificar", ""))[1]
 
-ETAPA2_PROMPT = """ETAPA 2 — FILTRO EMERGENTES + ENRIQUECIMIENTO
+        row_data = {
+            "nombre":   item.get("nombre", ""),
+            "link":     item.get("url", ""),
+            "contacto": item.get("url_educativa", "") or item.get("tipo_validacion", "")[:120],
+            "tipo":     val_name,
+            "uso":      item.get("casos_uso", "")[:200],
+            "tema":     tema,
+            "fecha":    fecha,
+        }
 
-Herramientas de referencia (Etapa 1): {herramientas_etapa1}
-Tema: {tema}
-Cantidad: {cantidad}
-Numeración desde: {num_inicio}
+        params   = urllib.parse.urlencode(row_data)
+        full_url = f"{script_url}?{params}"
 
-Busca {cantidad} herramientas DIFERENTES a las anteriores, emergentes y poco conocidas para "{tema}" que cumplan:
-1. Pago para el público general.
-2. 100% gratis para académicos con validación manual.
-3. NO aparecen en los primeros 5 resultados de Google.
-4. Son startups, betas, o herramientas de muy baja visibilidad.
-5. NO son Open Source ni software masivo (Adobe, Microsoft, etc).
+        try:
+            req = urllib.request.Request(full_url,
+                  headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                body = resp.read().decode("utf-8")
+                if "ok" in body.lower() or "success" in body.lower() or resp.status == 200:
+                    saved += 1
+                else:
+                    errors.append(item.get("nombre","?"))
+        except Exception as e:
+            errors.append(f"{item.get('nombre','?')} ({str(e)[:40]})")
 
-Para cada herramienta incluye descripción detallada, precio exacto, proceso de validación educativa y casos de uso.
+    if saved == len(items):
+        return True, f"✅ {saved} herramientas guardadas en Google Sheets."
+    elif saved > 0:
+        return True, f"⚠️ {saved} de {len(items)} guardadas. Falló: {', '.join(errors[:3])}"
+    else:
+        return False, f"❌ Error al guardar. Verifica la URL del Apps Script."
 
-{{"etapa":2,"tema":"{tema}","lista_definitiva":[{{"numero":{num_inicio},"nombre":"...","url":"...","que_hace_categoria":"...","precio_publico_general":"...","metodo_acceso_educativo_gratuito":"...","razon_baja_popularidad":"...","casos_uso":"..."}}]}}"""
+# ─── URL VERIFIER ─────────────────────────────────────────────────────────────
 
+def verify_url(url: str) -> bool:
+    try:
+        req = urllib.request.Request(url, method="HEAD",
+              headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return r.status < 400
+    except Exception:
+        try:
+            req2 = urllib.request.Request(url, method="GET",
+                   headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req2, timeout=5) as r:
+                return r.status < 400
+        except Exception:
+            return False
+
+def verify_results(results: list) -> list:
+    for item in results:
+        url = item.get("url", "")
+        item["url_verified"] = verify_url(url) if url else False
+    return results
 
 # ─── GEMINI ───────────────────────────────────────────────────────────────────
+
 def get_api_key():
     try:
         return st.secrets["GEMINI_API_KEY"]
@@ -127,7 +230,11 @@ def get_api_key():
 
 def get_model(api_key):
     genai.configure(api_key=api_key)
-    return genai.GenerativeModel(model_name="gemini-2.5-flash", system_instruction=SYSTEM_PROMPT)
+    return genai.GenerativeModel(
+        model_name="gemini-2.5-flash",
+        system_instruction="""Eres un analista de software experto en licencias académicas.
+Solo incluye herramientas que EXISTEN REALMENTE. Responde ÚNICAMENTE en JSON puro sin bloques de código."""
+    )
 
 def call_gemini(model, prompt, retries=3):
     for attempt in range(retries):
@@ -139,392 +246,503 @@ def call_gemini(model, prompt, retries=3):
             return json.loads(text)
         except json.JSONDecodeError:
             if attempt == retries - 1:
-                return {"error": "JSON inválido", "raw": text}
+                return {"error": "JSON inválido"}
         except Exception as e:
             if attempt == retries - 1:
                 return {"error": str(e)}
             time.sleep(2 ** attempt)
     return {"error": "Sin respuesta"}
 
+# ─── PROMPTS ─────────────────────────────────────────────────────────────────
 
-# ─── EXCEL ────────────────────────────────────────────────────────────────────
-def build_excel(results, tema):
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Resultados"
-    ws.sheet_view.showGridLines = False
-    HEADERS = ["N°","Nombre","URL","Categoría / Función","Precio Público","Acceso Educativo Gratuito","Razón Baja Popularidad","Casos de Uso"]
-    WIDTHS  = [5, 28, 35, 30, 30, 45, 40, 45]
-    NAVY="0F172A"; SLATE="1E293B"; TEAL="0D9488"; WHITE="F1F5F9"; LIGHT="E2E8F0"
-    def bd():
-        s=Side(style="thin",color="1E3A5F"); return Border(left=s,right=s,top=s,bottom=s)
+def build_prompt(tema, val_types, beneficiarios, depth, cantidad, num_inicio, historial):
+    val_desc  = "\n".join([f"  - {VALIDATION_TYPES[v][1]}: {VALIDATION_TYPES[v][2]}" for v in val_types])
+    ben_desc  = ", ".join([BENEFICIARY_TYPES[b] for b in beneficiarios])
+    depth_desc = DEPTH_LEVELS[depth][2]
+    hist_str  = (f"\nNO repetir estas herramientas ya encontradas: {json.dumps(historial, ensure_ascii=False)}"
+                 if historial else "")
 
-    ws.merge_cells("A1:H1")
-    c=ws["A1"]; c.value=f"Buscador Licencias — {tema}"
-    c.font=Font(name="Arial",bold=True,size=16,color=WHITE)
-    c.fill=PatternFill("solid",start_color=NAVY)
-    c.alignment=Alignment(horizontal="center",vertical="center")
-    ws.row_dimensions[1].height=36
+    return f"""Busca {cantidad} herramientas digitales reales para el área de "{tema}".
 
-    ws.merge_cells("A2:H2")
-    s=ws["A2"]; s.value="Softwares académicos con alto impacto · Pago público | Gratuito académico verificado | Emergentes"
-    s.font=Font(name="Arial",size=9,color="94A3B8")
-    s.fill=PatternFill("solid",start_color=NAVY)
-    s.alignment=Alignment(horizontal="center",vertical="center")
-    ws.row_dimensions[2].height=18
+FILTROS OBLIGATORIOS:
+1. De PAGO para el público general.
+2. COMPLETAMENTE GRATUITAS (no descuento) para: {ben_desc}
+3. Acceso gratuito solo mediante: {val_desc}
+4. Popularidad: {depth_desc}
+5. NO incluir: Open Source, 100% gratuitas para todos, Adobe, Microsoft, Google, Apple, Autodesk, JetBrains, Notion, Canva.
+6. EXCLUIR si solo ofrecen descuento — debe ser gratuito total.
+7. EXCLUIR si requiere que la institución haya pagado primero.
+{hist_str}
 
-    for col in range(1,9):
-        ws.cell(row=3,column=col).fill=PatternFill("solid",start_color=NAVY)
-    ws.row_dimensions[3].height=6
+Devuelve JSON con este formato exacto:
+{{"tema":"{tema}","lista":[{{"numero":{num_inicio},"nombre":"...","url":"...","url_educativa":"...","categoria":"...","precio_publico":"...","beneficiarios":"...","tipo_validacion":"...","tipo_validacion_key":"[form_manual|email_edu|email_uni|documento|grant|contacto]","razon_emergente":"...","casos_uso":"..."}}]}}"""
 
-    for ci,(h,w) in enumerate(zip(HEADERS,WIDTHS),1):
-        cell=ws.cell(row=4,column=ci,value=h)
-        cell.font=Font(name="Arial",bold=True,size=9,color=WHITE)
-        cell.fill=PatternFill("solid",start_color=TEAL)
-        cell.alignment=Alignment(horizontal="center",vertical="center",wrap_text=True)
-        cell.border=bd()
-        ws.column_dimensions[get_column_letter(ci)].width=w
-    ws.row_dimensions[4].height=28
+CORRECCION_PROMPT = """Resultados anteriores: {resultados}
+Instrucciones: "{instrucciones}"
+Tema: {tema}
+Aplica las correcciones. Mismo número de herramientas. Mismo formato JSON.
+{{"tema":"{tema}","lista":[{{"numero":1,"nombre":"...","url":"...","url_educativa":"...","categoria":"...","precio_publico":"...","beneficiarios":"...","tipo_validacion":"...","tipo_validacion_key":"...","razon_emergente":"...","casos_uso":"..."}}]}}"""
 
-    for i,item in enumerate(results):
-        row=5+i; bg=NAVY if i%2==0 else SLATE
-        vals=[item.get("numero",i+1),item.get("nombre",""),item.get("url",""),
-              item.get("que_hace_categoria",""),item.get("precio_publico_general",""),
-              item.get("metodo_acceso_educativo_gratuito",""),item.get("razon_baja_popularidad",""),
-              item.get("casos_uso","")]
-        for ci,v in enumerate(vals,1):
-            cell=ws.cell(row=row,column=ci,value=str(v))
-            cell.fill=PatternFill("solid",start_color=bg); cell.border=bd()
-            cell.alignment=Alignment(vertical="top",wrap_text=True,horizontal="center" if ci==1 else "left")
-            if ci==1: cell.font=Font(name="Arial",bold=True,size=10,color="0D9488")
-            elif ci==2: cell.font=Font(name="Arial",bold=True,size=9,color=WHITE)
-            elif ci==3: cell.font=Font(name="Arial",size=8,color="14B8A6",underline="single")
-            else: cell.font=Font(name="Arial",size=9,color=LIGHT)
-        ws.row_dimensions[row].height=80
-    ws.freeze_panes="A5"
+# ─── UI HELPERS ───────────────────────────────────────────────────────────────
 
-    ws2=wb.create_sheet("Resumen")
-    ws2.sheet_view.showGridLines=False
-    ws2.column_dimensions["A"].width=32; ws2.column_dimensions["B"].width=55
-    ws2.merge_cells("A1:B1"); t=ws2["A1"]; t.value="Resumen de Búsqueda"
-    t.font=Font(name="Arial",bold=True,size=14,color=WHITE)
-    t.fill=PatternFill("solid",start_color=NAVY)
-    t.alignment=Alignment(horizontal="center",vertical="center"); ws2.row_dimensions[1].height=32
-    for ri,(label,value) in enumerate([("Tema",tema),("Total",len(results)),
-        ("Bloques",max(1,(len(results)+9)//10)),("Motor IA","Gemini 2.5 Flash"),
-        ("Generado con","Buscador Licencias v1.3")],2):
-        bg=NAVY if ri%2==0 else SLATE
-        lc=ws2.cell(row=ri,column=1,value=label); lc.font=Font(name="Arial",bold=True,size=9,color="94A3B8")
-        lc.fill=PatternFill("solid",start_color=bg); lc.border=bd(); lc.alignment=Alignment(vertical="center")
-        vc=ws2.cell(row=ri,column=2,value=str(value)); vc.font=Font(name="Arial",size=9,color=WHITE)
-        vc.fill=PatternFill("solid",start_color=bg); vc.border=bd()
-        vc.alignment=Alignment(vertical="center",wrap_text=True); ws2.row_dimensions[ri].height=22
+def render_hero(total=0, bloques=0, guardadas=0):
+    st.markdown(f"""
+    <div class="hero-wrap">
+        <div class="hero-eyebrow">LicenceHunt · Academic Software Discovery</div>
+        <h1 class="hero-title">Encuentra <span>Licencias</span><br>Académicas Gratuitas</h1>
+        <p class="hero-sub">Buscador de softwares con alto impacto en el desarrollo de la comunidad universitaria
+        — filtrado por tipo de validación, beneficiario y profundidad de búsqueda.</p>
+        <div class="hero-stats">
+            <div><div class="hero-stat-val">{total}</div><div class="hero-stat-lbl">Encontradas</div></div>
+            <div><div class="hero-stat-val">{bloques}</div><div class="hero-stat-lbl">Bloques</div></div>
+            <div><div class="hero-stat-val">{guardadas}</div><div class="hero-stat-lbl">Guardadas en Sheets</div></div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    buf=io.BytesIO(); wb.save(buf); buf.seek(0); return buf.getvalue()
-
-
-# ─── UI HELPERS ──────────────────────────────────────────────────────────────
-def render_hero():
-    st.markdown("""
-    <div class="hero">
-        <div class="hero-badge">🎓 Licencias Académicas Gratuitas</div>
-        <h1>Buscador de <span>Licencias</span></h1>
-        <p>Buscador de softwares académicos con alto impacto en el desarrollo académico de la comunidad Universitaria.</p>
-    </div>""", unsafe_allow_html=True)
-
-def render_stage_indicator(active):
-    stages=[("1","Modelo de Negocio"),("2","Filtro Emergentes"),("3","Lista Definitiva")]
-    pills="".join(f'<div class="stage-pill{"active" if int(n)<=active else ""}"><div class="stage-dot"></div> Etapa {n}: {l}</div>'
-                  for n,l in stages)
-    # fix: add space before class active
-    pills=pills.replace('"stage-pillactive"','"stage-pill active"')
-    st.markdown(f'<div class="stage-row">{pills}</div>', unsafe_allow_html=True)
+def render_stage_bar(active):
+    stages = ["1. Filtros", "2. Revisión", "3. Corrección", "4. Resultados"]
+    items = ""
+    for i, s in enumerate(stages):
+        cls = "done" if i < active else ("active" if i == active else "")
+        items += f'<div class="stage-item {cls}">{s}</div>'
+    st.markdown(f'<div class="stage-bar">{items}</div>', unsafe_allow_html=True)
 
 def render_result_card(item):
-    num=item.get("numero","?"); nombre=item.get("nombre",""); url=item.get("url","")
-    cat=item.get("que_hace_categoria",""); precio=item.get("precio_publico_general","")
-    acceso=item.get("metodo_acceso_educativo_gratuito",""); popular=item.get("razon_baja_popularidad","")
-    casos=item.get("casos_uso","")
-    casos_html=(f'<div class="result-field"><div class="result-field-label">🏥 Casos de Uso</div>'
-                f'<div class="result-field-value">{casos}</div></div>') if casos else ""
-    st.markdown(f"""<div class="result-card">
-        <div class="result-num">{num}</div>
-        <div class="result-name">{nombre}</div>
-        <div class="result-url">🔗 {url}</div>
-        <div class="result-field"><div class="result-field-label">📋 Categoría</div><div class="result-field-value">{cat}</div></div>
-        <div class="result-field"><div class="result-field-label">💰 Precio Público</div><div class="result-field-value">{precio}</div></div>
-        <div class="result-field"><div class="result-field-label">🎓 Acceso Educativo Gratuito</div><div class="result-field-value">{acceso}</div></div>
-        <div class="result-field"><div class="result-field-label">🔍 Por qué es Emergente</div><div class="result-field-value">{popular}</div></div>
-        {casos_html}</div>""", unsafe_allow_html=True)
+    num     = item.get("numero", "?")
+    nombre  = item.get("nombre", "")
+    url     = item.get("url", "")
+    url_edu = item.get("url_educativa", "")
+    cat     = item.get("categoria", "")
+    precio  = item.get("precio_publico", "")
+    ben     = item.get("beneficiarios", "")
+    val     = item.get("tipo_validacion", "")
+    val_key = item.get("tipo_validacion_key", "")
+    emer    = item.get("razon_emergente", "")
+    casos   = item.get("casos_uso", "")
+    verified = item.get("url_verified", None)
+    saved    = item.get("saved_to_sheets", False)
 
-def render_block_header(bloque_num, start, end):
-    st.markdown(f'<div class="block-header"><div class="block-badge">Bloque {bloque_num}</div>'
-                f'<span class="block-range">#{start} — #{end}</span></div>', unsafe_allow_html=True)
+    val_icon = VALIDATION_TYPES.get(val_key, ("🔹", "", ""))[0]
+    val_name = VALIDATION_TYPES.get(val_key, ("", "Sin clasificar", ""))[1]
 
+    ver_badge  = '<span class="badge badge-green">✅ URL ok</span>' if verified is True else \
+                 '<span class="badge badge-red">⚠️ No confirmada</span>' if verified is False else ""
+    save_badge = '<span class="badge badge-saved">💾 Guardada</span>' if saved else ""
+
+    url_edu_html = (f'<div><div class="rcard-field-lbl">🔗 URL Educativa</div>'
+                    f'<div class="rcard-field-val"><a href="{url_edu}" style="color:var(--teal)">{url_edu}</a></div></div>'
+                    if url_edu else "<div></div>")
+
+    num_fmt = f"{num:02d}" if isinstance(num, int) else str(num)
+
+    st.markdown(f"""
+    <div class="rcard">
+        <div class="rcard-num">{num_fmt}</div>
+        <div class="rcard-badges">
+            <span class="badge badge-teal">{val_icon} {val_name}</span>
+            <span class="badge badge-gold">💰 De pago</span>
+            {ver_badge}{save_badge}
+        </div>
+        <div class="rcard-name">{nombre}</div>
+        <div class="rcard-url">🔗 {url}</div>
+        <div class="rcard-grid">
+            <div><div class="rcard-field-lbl">📋 Categoría</div><div class="rcard-field-val">{cat}</div></div>
+            <div><div class="rcard-field-lbl">💰 Precio Público</div><div class="rcard-field-val">{precio}</div></div>
+            <div><div class="rcard-field-lbl">👥 Beneficiarios</div><div class="rcard-field-val">{ben}</div></div>
+            {url_edu_html}
+        </div>
+        <div style="margin-top:.9rem">
+            <div class="rcard-field-lbl">🎓 Proceso de Acceso Educativo</div>
+            <div class="rcard-field-val">{val}</div>
+        </div>
+        <div style="margin-top:.7rem">
+            <div class="rcard-field-lbl">🔍 Por qué es poco conocida</div>
+            <div class="rcard-field-val">{emer}</div>
+        </div>
+        <div style="margin-top:.7rem">
+            <div class="rcard-field-lbl">🏛️ Casos de uso</div>
+            <div class="rcard-field-val">{casos}</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+def render_block_header(b, start, end):
+    st.markdown(f"""
+    <div class="block-hdr">
+        <div class="block-num-badge">Bloque {b}</div>
+        <span class="block-range">#{start} — #{end}</span>
+    </div>""", unsafe_allow_html=True)
 
 # ─── MAIN ────────────────────────────────────────────────────────────────────
-# FASE values: "inicio" | "e1_done" | "resultados"
+
+DEFAULTS = {
+    "fase":              "filtros",
+    "all_results":       [],
+    "bloque_num":        0,
+    "tema":              "",
+    "cantidad":          10,
+    "val_types":         ["form_manual", "documento", "contacto"],
+    "beneficiarios":     ["estudiantes", "profesores"],
+    "depth":             "emergente",
+    "search_result":     None,
+    "corrected":         False,
+    "historial_nombres": [],
+    "total_guardadas":   0,
+    "saved_blocks":      set(),   # set of block indices already saved
+}
+
 def main():
-
-    # ── Init session state FIRST — before any widget ──────────────────────
-    defaults = {
-        "fase": "inicio",        # controls which screen to show
-        "e1_result": None,
-        "model_key": None,
-        "corrected": False,
-        "all_results": [],
-        "bloque_num": 0,
-        "tema": "",
-        "cantidad": 10,
-    }
-    for k, v in defaults.items():
+    # ── Init ─────────────────────────────────────────────────────────────
+    for k, v in DEFAULTS.items():
         if k not in st.session_state:
-            st.session_state[k] = v
+            st.session_state[k] = v if not isinstance(v, set) else set()
 
-    api_key = get_api_key()
+    api_key                = get_api_key()
+    script_url, csv_url    = get_sheets_config()
+    total   = len(st.session_state.all_results)
+    bloques = st.session_state.bloque_num
+    guardadas = st.session_state.total_guardadas
 
-    render_hero()
+    render_hero(total, bloques, guardadas)
 
     # Sidebar
     with st.sidebar:
-        st.markdown("### 🎓 Buscador Licencias")
+        st.markdown("### 🎓 LicenceHunt")
         st.markdown("""**Flujo:**
-1. Valida modelo de negocio
-2. ✏️ Corrección opcional
-3. Filtra emergentes
-4. ＋ Más bloques
-5. Descarga Excel""")
+1. Configura filtros
+2. Revisa pre-selección
+3. Corrección opcional
+4. Resultados por bloques
+5. Guardar en Google Sheets""")
         st.markdown("---")
-        st.markdown("<small style='color:#475569'>Buscador Licencias v1.3<br>Gemini 2.5 Flash</small>",
+        if total:
+            verified = sum(1 for r in st.session_state.all_results if r.get("url_verified") is True)
+            st.metric("Encontradas", total)
+            st.metric("Verificadas ✅", verified)
+            st.metric("Guardadas en Sheets", guardadas)
+        if not script_url:
+            st.warning("⚠️ Falta APPS_SCRIPT_URL en Secrets")
+        st.markdown("---")
+        st.markdown("<small style='color:#4b6080'>LicenceHunt v2.0<br>Gemini 2.5 Flash</small>",
                     unsafe_allow_html=True)
 
     # ═══════════════════════════════════════════════════════════════════════
-    # PANTALLA 1: INICIO — formulario de búsqueda
+    # FASE 1: FILTROS
     # ═══════════════════════════════════════════════════════════════════════
-    if st.session_state.fase == "inicio":
-        col_l, col_r = st.columns([2, 1])
-        with col_l:
-            st.markdown('<div class="config-label">Tema de búsqueda</div>', unsafe_allow_html=True)
+    if st.session_state.fase == "filtros":
+        render_stage_bar(0)
+
+        # Cargar historial del Sheet
+        saved_in_sheets = []
+        if csv_url:
+            saved_in_sheets = load_saved_names(csv_url)
+            if saved_in_sheets:
+                st.markdown(
+                    f'<div class="ok-box">📋 Google Sheets conectado — '
+                    f'<strong>{len(saved_in_sheets)} herramientas</strong> ya guardadas serán excluidas automáticamente.</div>',
+                    unsafe_allow_html=True)
+
+        st.markdown('<div class="section-title">Tema de búsqueda</div>', unsafe_allow_html=True)
+        st.markdown('<div class="filter-card">', unsafe_allow_html=True)
+        col_t, col_c = st.columns([3, 1])
+        with col_t:
             tema_input = st.text_input("tema", label_visibility="collapsed",
-                placeholder="Ej: Enfermería, Arquitectura, Marketing Digital, Derecho...",
+                placeholder="Ej: Enfermería, Arquitectura, Diseño Gráfico, Derecho...",
                 value=st.session_state.tema)
-        with col_r:
-            st.markdown('<div class="config-label">Resultados por bloque</div>', unsafe_allow_html=True)
-            cantidad_input = st.selectbox("cantidad", label_visibility="collapsed",
-                options=[5, 10, 15, 20], index=[5,10,15,20].index(st.session_state.cantidad)
-                if st.session_state.cantidad in [5,10,15,20] else 1)
+        with col_c:
+            cantidad_input = st.selectbox("cant", label_visibility="collapsed",
+                options=[5, 10, 15, 20],
+                index=[5,10,15,20].index(st.session_state.cantidad)
+                      if st.session_state.cantidad in [5,10,15,20] else 1)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-        if st.button("🔍 Buscar Herramientas", use_container_width=True):
+        st.markdown('<div class="section-title">Beneficiarios del acceso gratuito</div>', unsafe_allow_html=True)
+        st.markdown('<div class="filter-card">', unsafe_allow_html=True)
+        ben_sel = st.multiselect("beneficiarios", label_visibility="collapsed",
+            options=list(BENEFICIARY_TYPES.keys()),
+            default=st.session_state.beneficiarios,
+            format_func=lambda x: BENEFICIARY_TYPES[x])
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        st.markdown('<div class="section-title">Tipo de validación académica</div>', unsafe_allow_html=True)
+        st.markdown('<div class="filter-card">', unsafe_allow_html=True)
+        val_sel = st.multiselect("validacion", label_visibility="collapsed",
+            options=list(VALIDATION_TYPES.keys()),
+            default=st.session_state.val_types,
+            format_func=lambda x: f"{VALIDATION_TYPES[x][0]} {VALIDATION_TYPES[x][1]}")
+        for k in list(VALIDATION_TYPES.keys()):
+            icon, name, desc = VALIDATION_TYPES[k]
+            sel = k in (val_sel or [])
+            st.markdown(
+                f'<div style="font-size:.76rem;color:{"#06b6d4" if sel else "#4b6080"};'
+                f'padding:.12rem 0 .12rem .5rem;border-left:2px solid {"#06b6d4" if sel else "#1e2d45"};'
+                f'margin-bottom:.28rem">{icon} <strong>{name}</strong> — {desc}</div>',
+                unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        st.markdown('<div class="section-title">Profundidad de búsqueda</div>', unsafe_allow_html=True)
+        st.markdown('<div class="filter-card">', unsafe_allow_html=True)
+        depth_options = list(DEPTH_LEVELS.keys())
+        depth_sel = st.radio("depth", label_visibility="collapsed",
+            options=depth_options,
+            index=depth_options.index(st.session_state.depth)
+                  if st.session_state.depth in depth_options else 2,
+            format_func=lambda x: f"{DEPTH_LEVELS[x][0]} {DEPTH_LEVELS[x][1]} — {DEPTH_LEVELS[x][2]}")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        st.markdown('<div class="section-title">Opciones adicionales</div>', unsafe_allow_html=True)
+        st.markdown('<div class="filter-card">', unsafe_allow_html=True)
+        verify_toggle = st.checkbox("✅ Verificar URLs automáticamente", value=True, key="verify_toggle")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        if st.button("🔍 Buscar Licencias Académicas", use_container_width=True):
             if not tema_input.strip():
-                st.error("⚠️ Ingresa un tema de búsqueda.")
-                return
+                st.error("⚠️ Ingresa un tema de búsqueda."); return
+            if not val_sel:
+                st.error("⚠️ Selecciona al menos un tipo de validación."); return
+            if not ben_sel:
+                st.error("⚠️ Selecciona al menos un beneficiario."); return
             if not api_key:
-                st.error("⚠️ No se encontró GEMINI_API_KEY en Secrets.")
-                return
+                st.error("⚠️ No se encontró GEMINI_API_KEY en Secrets."); return
 
-            # Save inputs
-            st.session_state.tema = tema_input.strip()
-            st.session_state.cantidad = cantidad_input
-            st.session_state.all_results = []
-            st.session_state.bloque_num = 0
-            st.session_state.corrected = False
-            st.session_state.e1_result = None
+            st.session_state.tema          = tema_input.strip()
+            st.session_state.cantidad      = cantidad_input
+            st.session_state.val_types     = val_sel
+            st.session_state.beneficiarios = ben_sel
+            st.session_state.depth         = depth_sel
+            st.session_state.all_results   = []
+            st.session_state.bloque_num    = 0
+            st.session_state.corrected     = False
+            st.session_state.saved_blocks  = set()
+            st.session_state.total_guardadas = 0
+            # Seed historial from Sheet
+            st.session_state.historial_nombres = list(saved_in_sheets)
 
-            # Run Etapa 1
             model = get_model(api_key)
-            st.session_state.model_key = api_key  # store to rebuild later
+            with st.spinner("⚙️ Buscando herramientas..."):
+                result = call_gemini(model, build_prompt(
+                    tema=st.session_state.tema,
+                    val_types=val_sel, beneficiarios=ben_sel,
+                    depth=depth_sel, cantidad=5,
+                    num_inicio=1, historial=st.session_state.historial_nombres,
+                ))
+            if "error" in result:
+                st.error(f"Error: {result['error']}"); return
 
-            render_stage_indicator(1)
-            with st.spinner("⚙️ Etapa 1 — Analizando modelos de negocio..."):
-                result1 = call_gemini(model, ETAPA1_PROMPT.format(tema=st.session_state.tema))
-
-            if "error" in result1:
-                st.error(f"Error en Etapa 1: {result1['error']}")
-                return
-
-            st.session_state.e1_result = result1
-            st.session_state.fase = "e1_done"
+            st.session_state.search_result = result
+            st.session_state.fase = "revision"
             st.rerun()
-
-        # Placeholder
-        st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
-        render_stage_indicator(0)
-        st.markdown('<div class="status-box">👆 Ingresa un tema y presiona <strong>Buscar Herramientas</strong>.</div>',
-                    unsafe_allow_html=True)
         return
 
     # ═══════════════════════════════════════════════════════════════════════
-    # PANTALLA 2: E1_DONE — mostrar resultados E1 + formulario corrección
+    # FASE 2: REVISIÓN + CORRECCIÓN
     # ═══════════════════════════════════════════════════════════════════════
-    if st.session_state.fase == "e1_done":
+    if st.session_state.fase == "revision":
+        render_stage_bar(1)
         model = get_model(api_key)
-        herramientas_e1 = st.session_state.e1_result.get("herramientas_validacion", [])
+        lista_preview = st.session_state.search_result.get("lista", [])
 
-        st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
-        render_stage_indicator(1)
-
-        with st.expander(f"✅ Etapa 1 — {len(herramientas_e1)} herramientas pre-seleccionadas (revisa antes de continuar)", expanded=True):
-            for h in herramientas_e1:
-                st.markdown(f"**{h.get('nombre')}** — `{h.get('url')}`")
-                c1, c2 = st.columns(2)
-                c1.caption(f"💰 {h.get('evidencia_pago','')}")
-                c2.caption(f"🎓 {h.get('evidencia_acceso_educativo','')}")
+        st.markdown('<div class="section-title">Pre-selección — revisa antes de continuar</div>',
+                    unsafe_allow_html=True)
+        with st.expander(f"✅ {len(lista_preview)} herramientas pre-seleccionadas", expanded=True):
+            for h in lista_preview:
+                vk = h.get("tipo_validacion_key","")
+                icon = VALIDATION_TYPES.get(vk, ("🔹","",""))[0]
+                vname = VALIDATION_TYPES.get(vk, ("","Sin clasificar",""))[1]
+                st.markdown(f"**{h.get('nombre','')}** — `{h.get('url','')}`")
+                c1, c2, c3 = st.columns(3)
+                c1.caption(f"💰 {h.get('precio_publico','')}")
+                c2.caption(f"{icon} {vname}")
+                c3.caption(f"👥 {h.get('beneficiarios','')}")
                 st.markdown("---")
 
-        # Feedback box
-        st.markdown("""<div class="feedback-box">
-            <div class="feedback-title">✏️ Revisión opcional antes de continuar</div>
-            <div class="feedback-body">Revisa los resultados de Etapa 1. Si alguna herramienta no cumple el filtro,
-            escribe tus instrucciones abajo. Si todo está correcto, déjalo vacío y haz clic en
-            <strong>Continuar a Etapa 2</strong>.</div></div>""", unsafe_allow_html=True)
+        st.markdown("""<div class="fb-box">
+            <div class="fb-title">✏️ Corrección opcional</div>
+            <div class="fb-body">¿Alguna herramienta no cumple los filtros? Escríbelo abajo.
+            Si todo está correcto, déjalo vacío y haz clic en <strong>Continuar</strong>.</div>
+        </div>""", unsafe_allow_html=True)
 
-        instrucciones = st.text_area("Instrucciones de corrección", label_visibility="collapsed",
-            placeholder='Ej: "Elimina NVivo porque solo ofrece descuento. Reemplázalo por una herramienta de simulación."',
-            height=110, key="feedback_text")
+        instrucciones = st.text_area("correcciones", label_visibility="collapsed",
+            placeholder='Ej: "Elimina la herramienta X porque solo da descuento. Busca una de simulación clínica."',
+            height=95, key="corr_text")
 
-        col_a, col_b = st.columns(2)
+        col_a, col_b, col_c = st.columns([1, 1, 1])
         with col_a:
             if st.button("✏️ Aplicar Corrección", use_container_width=True,
                          disabled=not instrucciones.strip(), key="btn_corr"):
-                with st.spinner("Aplicando correcciones..."):
-                    result_corr = call_gemini(model, ETAPA1_CORRECCION_PROMPT.format(
-                        resultados_anteriores=json.dumps(herramientas_e1, ensure_ascii=False),
-                        instrucciones_usuario=instrucciones.strip(),
+                with st.spinner("Corrigiendo..."):
+                    rc = call_gemini(model, CORRECCION_PROMPT.format(
+                        resultados=json.dumps(lista_preview, ensure_ascii=False),
+                        instrucciones=instrucciones.strip(),
                         tema=st.session_state.tema,
                     ))
-                if "error" in result_corr:
-                    st.error(f"Error: {result_corr['error']}")
+                if "error" in rc:
+                    st.error(f"Error: {rc['error']}")
                 else:
-                    st.session_state.e1_result = result_corr
+                    st.session_state.search_result = rc
                     st.session_state.corrected = True
                     st.rerun()
 
         with col_b:
-            if st.button("▶ Continuar a Etapa 2", use_container_width=True, key="btn_cont"):
-                # Run Etapas 2+3 immediately
-                herramientas_e1 = st.session_state.e1_result.get("herramientas_validacion", [])
-                nombres_e1 = [h.get("nombre","") for h in herramientas_e1]
-                num_inicio = 1
-
-                render_stage_indicator(2)
-                with st.spinner("🔍 Etapa 2 — Filtrando y enriqueciendo..."):
-                    result2 = call_gemini(model, ETAPA2_PROMPT.format(
-                        herramientas_etapa1=json.dumps(nombres_e1, ensure_ascii=False),
-                        cantidad=st.session_state.cantidad,
+            if st.button("▶ Continuar y generar lista", use_container_width=True, key="btn_cont"):
+                hist = [h.get("nombre","") for h in lista_preview] + st.session_state.historial_nombres
+                with st.spinner(f"Generando {st.session_state.cantidad} herramientas..."):
+                    rf = call_gemini(model, build_prompt(
                         tema=st.session_state.tema,
-                        num_inicio=num_inicio,
+                        val_types=st.session_state.val_types,
+                        beneficiarios=st.session_state.beneficiarios,
+                        depth=st.session_state.depth,
+                        cantidad=st.session_state.cantidad,
+                        num_inicio=1, historial=hist,
                     ))
+                if "error" in rf:
+                    st.error(f"Error: {rf['error']}"); return
 
-                if "error" in result2:
-                    st.error(f"Error en Etapa 2: {result2['error']}")
-                    return
-
-                lista = result2.get("lista_definitiva", [])
+                lista = rf.get("lista", [])
                 for i, item in enumerate(lista):
-                    item["numero"] = num_inicio + i
+                    item["numero"] = i + 1
+                    item["saved_to_sheets"] = False
 
-                st.session_state.all_results = lista
-                st.session_state.bloque_num = 1
+                if st.session_state.get("verify_toggle", True):
+                    with st.spinner("✅ Verificando URLs..."):
+                        lista = verify_results(lista)
+
+                st.session_state.all_results  = lista
+                st.session_state.bloque_num   = 1
+                st.session_state.historial_nombres = hist + [h.get("nombre","") for h in lista]
                 st.session_state.fase = "resultados"
                 st.rerun()
+
+        with col_c:
+            if st.button("← Volver a filtros", use_container_width=True, key="btn_back"):
+                st.session_state.fase = "filtros"; st.rerun()
         return
 
     # ═══════════════════════════════════════════════════════════════════════
-    # PANTALLA 3: RESULTADOS — bloques acumulados + buscar más
+    # FASE 3: RESULTADOS
     # ═══════════════════════════════════════════════════════════════════════
     if st.session_state.fase == "resultados":
-        model = get_model(api_key)
-        all_results = st.session_state.all_results
-        cantidad = st.session_state.cantidad
-        tema = st.session_state.tema
+        render_stage_bar(3)
+        model      = get_model(api_key)
+        all_results= st.session_state.all_results
+        cantidad   = st.session_state.cantidad
+        tema       = st.session_state.tema
 
-        st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
-
-        # Metrics
-        end_num = all_results[-1].get("numero", len(all_results)) if all_results else 0
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Total encontradas", len(all_results))
-        m2.metric("Bloques generados", st.session_state.bloque_num)
-        m3.metric("Rango actual", f"#1 → #{end_num}")
+        verified_count = sum(1 for r in all_results if r.get("url_verified") is True)
+        unverified     = sum(1 for r in all_results if r.get("url_verified") is False)
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Total encontradas",   len(all_results))
+        m2.metric("Bloques generados",   st.session_state.bloque_num)
+        m3.metric("URLs verificadas ✅",  verified_count)
+        m4.metric("Guardadas en Sheets", st.session_state.total_guardadas)
 
         if st.session_state.corrected:
-            st.markdown('<div class="correction-box">🔧 Lista generada con correcciones de Etapa 1.</div>',
+            st.markdown('<div class="ok-box">🔧 Lista generada con correcciones aplicadas.</div>',
                         unsafe_allow_html=True)
 
-        st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="div"></div>', unsafe_allow_html=True)
 
-        # Render all blocks
+        end_num = 0
         for b in range(st.session_state.bloque_num):
-            bloque_items = all_results[b * cantidad: (b + 1) * cantidad]
+            bloque_items = all_results[b * cantidad: (b+1) * cantidad]
             if not bloque_items:
                 continue
             start_n = bloque_items[0].get("numero", b * cantidad + 1)
             end_n   = bloque_items[-1].get("numero", (b+1) * cantidad)
+            end_num = end_n
+
             render_block_header(b + 1, start_n, end_n)
+
             for item in bloque_items:
                 render_result_card(item)
-            if b < st.session_state.bloque_num - 1:
-                st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
-        # Buscar más
-        st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
-        next_bloque = st.session_state.bloque_num + 1
-        next_start  = end_num + 1
-        next_end    = next_start + cantidad - 1
+            # ── GUARDAR BLOQUE EN SHEETS ──────────────────────────────────
+            already_saved = b in st.session_state.saved_blocks
+            if already_saved:
+                st.markdown(
+                    '<div class="save-block"><span style="color:var(--green);font-size:.9rem">💾</span>'
+                    '<div class="save-info"><strong>Bloque guardado en Google Sheets.</strong> '
+                    'Las herramientas de este bloque no se repetirán en búsquedas futuras.</div></div>',
+                    unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                <div class="save-block">
+                    <div class="save-info">
+                        <strong>Guardar Bloque {b+1} en Google Sheets</strong><br>
+                        Columnas: Nombre · Link · Contacto · Tipo · Uso · Tema · Fecha
+                    </div>
+                </div>""", unsafe_allow_html=True)
+
+                if st.button(f"💾 Guardar Bloque {b+1} en Google Sheets",
+                             key=f"save_b{b}", use_container_width=False):
+                    if not script_url:
+                        st.error("⚠️ Falta APPS_SCRIPT_URL en Secrets.")
+                    else:
+                        with st.spinner("Guardando en Google Sheets..."):
+                            ok, msg = save_block_to_sheets(script_url, bloque_items, tema)
+                        if ok:
+                            # Mark items as saved
+                            for item in bloque_items:
+                                item["saved_to_sheets"] = True
+                            st.session_state.saved_blocks.add(b)
+                            st.session_state.total_guardadas += len(bloque_items)
+                            st.success(msg)
+                            # Invalidate cache so next search reads updated sheet
+                            load_saved_names.clear()
+                            st.rerun()
+                        else:
+                            st.error(msg)
+
+            if b < st.session_state.bloque_num - 1:
+                st.markdown('<div class="div"></div>', unsafe_allow_html=True)
+
+        # ── MÁS BLOQUES ──────────────────────────────────────────────────
+        st.markdown('<div class="div"></div>', unsafe_allow_html=True)
+        next_b     = st.session_state.bloque_num + 1
+        next_start = end_num + 1
+        next_end   = next_start + cantidad - 1
 
         st.markdown(f"""<div class="more-block">
-            <div class="more-badge">Continuar búsqueda</div>
-            <div class="more-title">¿Quieres más herramientas?</div>
-            <div class="more-sub">Bloque {next_bloque}: #{next_start}–#{next_end} sin perder el historial</div>
+            <div class="more-title">¿Más herramientas?</div>
+            <div class="more-sub">Bloque {next_b} — #{next_start} al #{next_end} · sin perder el historial</div>
         </div>""", unsafe_allow_html=True)
 
-        col_mas, col_nueva = st.columns([1, 1])
+        col_mas, col_nueva = st.columns(2)
         with col_mas:
-            if st.button(f"＋ Buscar {cantidad} más (Bloque {next_bloque})",
+            if st.button(f"＋ Buscar {cantidad} más (Bloque {next_b})",
                          use_container_width=True, key=f"btn_more_{st.session_state.bloque_num}"):
-                nombres_e1 = [h.get("nombre","") for h in
-                              st.session_state.e1_result.get("herramientas_validacion",[])]
-                with st.spinner(f"Generando Bloque {next_bloque}..."):
-                    result2 = call_gemini(model, ETAPA2_PROMPT.format(
-                        herramientas_etapa1=json.dumps(nombres_e1, ensure_ascii=False),
-                        cantidad=cantidad,
+                with st.spinner(f"Generando Bloque {next_b}..."):
+                    rm = call_gemini(model, build_prompt(
                         tema=tema,
-                        num_inicio=next_start,
+                        val_types=st.session_state.val_types,
+                        beneficiarios=st.session_state.beneficiarios,
+                        depth=st.session_state.depth,
+                        cantidad=cantidad, num_inicio=next_start,
+                        historial=st.session_state.historial_nombres,
                     ))
-                if "error" in result2:
-                    st.error(f"Error: {result2['error']}")
+                if "error" in rm:
+                    st.error(f"Error: {rm['error']}")
                 else:
-                    lista = result2.get("lista_definitiva", [])
-                    for i, item in enumerate(lista):
+                    lista_mas = rm.get("lista", [])
+                    for i, item in enumerate(lista_mas):
                         item["numero"] = next_start + i
-                    st.session_state.all_results.extend(lista)
+                        item["saved_to_sheets"] = False
+                    if st.session_state.get("verify_toggle", True):
+                        with st.spinner("✅ Verificando URLs..."):
+                            lista_mas = verify_results(lista_mas)
+                    nuevos = [h.get("nombre","") for h in lista_mas]
+                    st.session_state.all_results.extend(lista_mas)
+                    st.session_state.historial_nombres.extend(nuevos)
                     st.session_state.bloque_num += 1
                     st.rerun()
 
         with col_nueva:
             if st.button("🔄 Nueva búsqueda", use_container_width=True, key="btn_nueva"):
-                st.session_state.fase = "inicio"
-                st.session_state.all_results = []
-                st.session_state.bloque_num = 0
-                st.session_state.e1_result = None
-                st.session_state.corrected = False
+                for k, v in DEFAULTS.items():
+                    st.session_state[k] = v if not isinstance(v, set) else set()
+                st.session_state.fase = "filtros"
                 st.rerun()
-
-        # Excel
-        st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
-        st.markdown("### 📥 Exportar Resultados")
-        col_dl1, col_dl2 = st.columns([1, 3])
-        with col_dl1:
-            st.download_button(
-                label="⬇️ Descargar Excel completo",
-                data=build_excel(all_results, tema),
-                file_name=f"buscador_licencias_{tema.lower().replace(' ','_')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-            )
-        with col_dl2:
-            st.markdown(f'<div class="status-box">Excel con <strong>{len(all_results)} herramientas</strong> '
-                        f'en 2 hojas: Resultados y Resumen.</div>', unsafe_allow_html=True)
 
         with st.expander("🔧 Ver JSON completo"):
             st.json(all_results)
