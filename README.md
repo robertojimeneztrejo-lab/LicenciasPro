@@ -1,80 +1,57 @@
-# 🎓 Buscador Licencias v1.2
+# 🎓 LicenceHunt v2.0
 
-Buscador de softwares académicos con alto impacto en el desarrollo académico de la comunidad Universitaria.
+Buscador de licencias académicas gratuitas con integración Google Sheets.
 
-Encuentra herramientas digitales que son **de pago para el público general** pero **100% gratuitas para académicos** — verificadas con proceso manual, emergentes y poco conocidas.
+## Secrets requeridos en Streamlit Cloud
 
----
+Ve a tu app → **Settings → Secrets** y agrega:
 
-## 🚀 Deploy en Streamlit Cloud
-
-### Paso 1 — Sube a GitHub
-```bash
-git init
-git add .
-git commit -m "Buscador Licencias v1.2"
-git branch -M main
-git remote add origin https://github.com/TU_USUARIO/buscador-licencias.git
-git push -u origin main
-```
-
-### Paso 2 — Despliega en Streamlit Cloud
-1. Ve a [share.streamlit.io](https://share.streamlit.io)
-2. Conecta tu cuenta de GitHub
-3. Selecciona el repositorio
-4. Main file: `app.py` → **Deploy**
-
-### Paso 3 — Configura tu API Key ⚠️ OBLIGATORIO
-En Streamlit Cloud: tu app → **Settings → Secrets** → agrega:
 ```toml
-GEMINI_API_KEY = "AIzaSy..."
-```
-La app lee la key automáticamente. No hay campo visible en la interfaz.
-
-### Obtener API Key de Gemini (gratis)
-[aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)
-
----
-
-## 💻 Ejecutar localmente
-
-```bash
-python -m venv venv
-source venv/bin/activate      # Windows: venv\Scripts\activate
-pip install -r requirements.txt
+GEMINI_API_KEY   = "AIzaSy..."
+APPS_SCRIPT_URL  = "https://script.google.com/macros/s/TU_ID/exec"
+SHEETS_CSV_URL   = "https://docs.google.com/spreadsheets/d/TU_ID/gviz/tq?tqx=out:csv&sheet=licencias"
 ```
 
-Crea `.streamlit/secrets.toml`:
-```toml
-GEMINI_API_KEY = "AIzaSy..."
+## Configurar Google Apps Script (igual que ARIA Membresías)
+
+1. Abre tu Google Sheet
+2. Extensiones → Apps Script
+3. Pega este código:
+
+```javascript
+function doGet(e) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet()
+                .getSheetByName("licencias");
+  if (!sheet) {
+    sheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet("licencias");
+    sheet.appendRow(["Nombre","Link","Contacto","Tipo","Uso","Tema","Fecha"]);
+  }
+  var p = e.parameter;
+  sheet.appendRow([
+    p.nombre || "",
+    p.link   || "",
+    p.contacto || "",
+    p.tipo   || "",
+    p.uso    || "",
+    p.tema   || "",
+    p.fecha  || ""
+  ]);
+  return ContentService.createTextOutput("ok")
+         .setMimeType(ContentService.MimeType.TEXT);
+}
 ```
 
-```bash
-streamlit run app.py
-```
+4. Implementar → Nueva implementación → Aplicación web
+5. Ejecutar como: **Yo** · Acceso: **Cualquier persona**
+6. Copiar la URL → pegar en `APPS_SCRIPT_URL`
 
----
+## SHEETS_CSV_URL
 
-## 📋 Flujo completo
+En tu Sheet: **Archivo → Compartir → Publicar en la web**
+→ Selecciona la hoja "licencias" → CSV → Publicar
+→ Copia el enlace → pegar en `SHEETS_CSV_URL`
 
-| Paso | Descripción |
-|------|-------------|
-| **Etapa 1** | Gemini valida 5 herramientas con modelo de negocio correcto |
-| **✏️ Corrección** | Escribe instrucciones para corregir resultados antes de continuar |
-| **Etapa 2** | Filtra herramientas emergentes / baja popularidad |
-| **Etapa 3** | Enriquece con descripción, precio, proceso de acceso y casos de uso |
-| **＋ Más bloques** | Genera bloques adicionales de 10 sin perder el historial |
-| **Excel** | Descarga acumulada de todos los bloques en 2 hojas |
+## Columnas del Sheet
 
----
-
-## 🗂️ Estructura
-```
-buscador-licencias/
-├── app.py
-├── requirements.txt
-├── .streamlit/
-│   └── config.toml
-├── README.md
-└── .gitignore
-```
+| Nombre | Link | Contacto | Tipo | Uso | Tema | Fecha |
+|--------|------|----------|------|-----|------|-------|
