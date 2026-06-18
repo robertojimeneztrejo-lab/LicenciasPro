@@ -637,26 +637,7 @@ def main():
                       if st.session_state.cantidad in [5,10,15,20] else 1)
         st.markdown('</div>', unsafe_allow_html=True)
 
-        with st.expander("📄 O cargar un dossier o temario en PDF para iniciar la búsqueda automáticamente"):
-            pdf_file = st.file_uploader(
-                "Sube un dossier institucional, temario de asignaturas o plan de estudios (PDF)",
-                type=["pdf"],
-                key="pdf_dossier_uploader",
-                help="Se extrae solo el texto (sin imágenes) para detectar temas de búsqueda — no se envía el PDF completo a Gemini"
-            )
-            if pdf_file is not None:
-                if st.button("🔎 Analizar y buscar", key="detect_topic_btn", use_container_width=True):
-                    with st.spinner("Analizando el documento..."):
-                        detected_topics, error_msg = extract_topics_from_pdf(pdf_file, api_key)
-                    if detected_topics:
-                        st.session_state.pdf_topics_hidden = detected_topics
-                        st.session_state.tema = detected_topics[0]
-                        st.session_state.trigger_pdf_search = True
-                        st.rerun()
-                    else:
-                        st.error(f"No se pudieron identificar temas: {error_msg}")
-
-        if st.button("🔍 Buscar Licencias Académicas", use_container_width=True) or st.session_state.get("trigger_pdf_search"):
+        if st.button("🔍 Buscar Licencias Académicas a partir de Tema de Búsqueda", use_container_width=True) or st.session_state.get("trigger_pdf_search"):
             st.session_state.trigger_pdf_search = False
             if not tema_input.strip():
                 st.error("⚠️ Ingresa un tema de búsqueda."); return
@@ -692,6 +673,25 @@ def main():
             st.session_state.search_result = result
             st.session_state.fase = "revision"
             st.rerun()
+
+        with st.expander("📄 O cargar un dossier o temario en PDF para iniciar la búsqueda automáticamente"):
+            pdf_file = st.file_uploader(
+                "Sube un dossier institucional, temario de asignaturas o plan de estudios (PDF)",
+                type=["pdf"],
+                key="pdf_dossier_uploader",
+                help="Se extrae solo el texto (sin imágenes) para detectar temas de búsqueda — no se envía el PDF completo a Gemini"
+            )
+            if pdf_file is not None:
+                if st.button("🔎 Analizar Dossier y buscar", key="detect_topic_btn", use_container_width=True):
+                    with st.spinner("Analizando el documento..."):
+                        detected_topics, error_msg = extract_topics_from_pdf(pdf_file, api_key)
+                    if detected_topics:
+                        st.session_state.pdf_topics_hidden = detected_topics
+                        st.session_state.tema = detected_topics[0]
+                        st.session_state.trigger_pdf_search = True
+                        st.rerun()
+                    else:
+                        st.error(f"No se pudieron identificar temas: {error_msg}")
         return
 
     # ═══════════════════════════════════════════════════════════════════════
@@ -905,9 +905,6 @@ def main():
                 st.session_state["_reset_filters"] = True
                 st.session_state.fase = "filtros"
                 st.rerun()
-
-        with st.expander("🔧 Ver JSON completo"):
-            st.json(all_results)
 
 
 if __name__ == "__main__":
