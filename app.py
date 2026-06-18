@@ -14,7 +14,7 @@ st.set_page_config(
     page_title="LicenceHunt",
     page_icon="🎓",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 
 # ─── CSS ─────────────────────────────────────────────────────────────────────
@@ -42,11 +42,13 @@ html,body,[data-testid="stAppViewContainer"]{background:var(--ink)!important;fon
 .stButton>button:hover{transform:translateY(-2px)!important;box-shadow:0 8px 24px rgba(6,182,212,.3)!important;}
 [data-testid="stTextInput"] input,[data-testid="stTextArea"] textarea,[data-testid="stSelectbox"]>div>div{background:var(--ink2)!important;border:1px solid var(--border)!important;border-radius:10px!important;color:var(--bright)!important;font-family:'DM Sans',sans-serif!important;}
 [data-testid="stTextInput"] input:focus,[data-testid="stTextArea"] textarea:focus{border-color:var(--teal)!important;box-shadow:0 0 0 3px rgba(6,182,212,.15)!important;}
-.stage-bar{display:flex;gap:0;margin-bottom:2rem;background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;}
-.stage-item{flex:1;padding:.7rem 1rem;text-align:center;font-size:.7rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border-right:1px solid var(--border);transition:all .2s;}
-.stage-item:last-child{border-right:none;}
-.stage-item.done{background:rgba(6,182,212,.08);color:var(--teal);}
-.stage-item.active{background:rgba(6,182,212,.15);color:var(--bright);}
+.side-stage{display:flex;flex-direction:column;gap:0;margin:.6rem 0 1.1rem;border-left:2px solid var(--border);padding-left:.9rem;}
+.side-stage-item{position:relative;padding:.42rem 0;font-size:.74rem;font-weight:600;letter-spacing:.04em;color:var(--muted);transition:all .2s;}
+.side-stage-item::before{content:'';position:absolute;left:-1.16rem;top:.62rem;width:7px;height:7px;border-radius:50%;background:var(--border);}
+.side-stage-item.done{color:var(--teal);}
+.side-stage-item.done::before{background:var(--teal);}
+.side-stage-item.active{color:var(--bright);font-weight:700;}
+.side-stage-item.active::before{background:var(--gold);box-shadow:0 0 0 3px rgba(245,158,11,.2);}
 .rcard{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:1.5rem;margin-bottom:.9rem;position:relative;overflow:hidden;transition:border-color .2s,transform .15s;}
 .rcard:hover{border-color:var(--teal);transform:translateY(-1px);}
 .rcard::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--teal),transparent);opacity:0;transition:opacity .2s;}
@@ -300,13 +302,14 @@ def render_hero(total=0, bloques=0, guardadas=0):
     </div>
     """, unsafe_allow_html=True)
 
-def render_stage_bar(active):
+def render_side_stage(active):
     stages = ["1. Filtros", "2. Revisión", "3. Corrección", "4. Resultados"]
     items = ""
     for i, s in enumerate(stages):
         cls = "done" if i < active else ("active" if i == active else "")
-        items += f'<div class="stage-item {cls}">{s}</div>'
-    st.markdown(f'<div class="stage-bar">{items}</div>', unsafe_allow_html=True)
+        icon = "✓ " if i < active else ("▸ " if i == active else "")
+        items += f'<div class="side-stage-item {cls}">{icon}{s}</div>'
+    st.markdown(f'<div class="side-stage">{items}</div>', unsafe_allow_html=True)
 
 def render_result_card(item):
     num     = item.get("numero", "?")
@@ -390,7 +393,10 @@ DEFAULTS = {
     "historial_nombres": [],
     "total_guardadas":   0,
     "saved_blocks":      set(),   # set of block indices already saved
+    "verify_toggle":     True,
 }
+
+SIDEBAR_WIDGET_KEYS = {"val_types", "beneficiarios", "depth", "verify_toggle"}
 
 def main():
     # ── Init ─────────────────────────────────────────────────────────────
@@ -398,32 +404,74 @@ def main():
         if k not in st.session_state:
             st.session_state[k] = v if not isinstance(v, set) else set()
 
+    # Si se solicitó un reset, aplicarlo aquí (antes de crear los widgets
+    # del sidebar) para no chocar con la restricción de Streamlit de no
+    # modificar session_state de un widget ya instanciado en el mismo run.
+    if st.session_state.get("_reset_filters"):
+        for k in SIDEBAR_WIDGET_KEYS:
+            st.session_state[k] = DEFAULTS[k] if not isinstance(DEFAULTS[k], set) else set()
+        st.session_state["_reset_filters"] = False
+
     api_key                = get_api_key()
     script_url, csv_url    = get_sheets_config()
     total   = len(st.session_state.all_results)
     bloques = st.session_state.bloque_num
     guardadas = st.session_state.total_guardadas
 
+    # Mapeo de fase -> índice activo en el indicador de pasos
+    stage_idx = {"filtros": 0, "revision": 1, "resultados": 3}.get(st.session_state.fase, 0)
+
     render_hero(total, bloques, guardadas)
 
-    # Sidebar
+    # Sidebar — siempre visible, con pasos + todos los filtros (estilo Pro Membresías)
     with st.sidebar:
         st.markdown("### 🎓 LicenceHunt")
-        st.markdown("""**Flujo:**
-1. Configura filtros
-2. Revisa pre-selección
-3. Corrección opcional
-4. Resultados por bloques
-5. Guardar en Google Sheets""")
+        render_side_stage(stage_idx)
         st.markdown("---")
+
         if total:
             verified = sum(1 for r in st.session_state.all_results if r.get("url_verified") is True)
             st.metric("Encontradas", total)
             st.metric("Verificadas ✅", verified)
             st.metric("Guardadas en Sheets", guardadas)
+            st.markdown("---")
+
+        st.markdown("### 👥 Beneficiarios")
+        ben_sel = st.multiselect("beneficiarios", label_visibility="collapsed",
+            options=list(BENEFICIARY_TYPES.keys()),
+            format_func=lambda x: BENEFICIARY_TYPES[x],
+            key="beneficiarios")
+
+        st.markdown("---")
+        st.markdown("### 🎓 Tipo de validación académica")
+        val_sel = st.multiselect("validacion", label_visibility="collapsed",
+            options=list(VALIDATION_TYPES.keys()),
+            format_func=lambda x: f"{VALIDATION_TYPES[x][0]} {VALIDATION_TYPES[x][1]}",
+            key="val_types")
+        for k in list(VALIDATION_TYPES.keys()):
+            icon, name, desc = VALIDATION_TYPES[k]
+            sel = k in (val_sel or [])
+            st.markdown(
+                f'<div style="font-size:.72rem;color:{"#06b6d4" if sel else "#4b6080"};'
+                f'padding:.1rem 0 .1rem .5rem;border-left:2px solid {"#06b6d4" if sel else "#1e2d45"};'
+                f'margin-bottom:.25rem">{icon} <strong>{name}</strong> — {desc}</div>',
+                unsafe_allow_html=True)
+
+        st.markdown("---")
+        st.markdown("### 🔬 Profundidad de búsqueda")
+        depth_options = list(DEPTH_LEVELS.keys())
+        depth_sel = st.radio("depth", label_visibility="collapsed",
+            options=depth_options,
+            format_func=lambda x: f"{DEPTH_LEVELS[x][0]} {DEPTH_LEVELS[x][1]} — {DEPTH_LEVELS[x][2]}",
+            key="depth")
+
+        st.markdown("---")
+        st.markdown("### ⚙️ Opciones adicionales")
+        verify_toggle = st.checkbox("✅ Verificar URLs automáticamente", key="verify_toggle")
+
+        st.markdown("---")
         if not script_url:
             st.warning("⚠️ Falta APPS_SCRIPT_URL en Secrets")
-        st.markdown("---")
         st.markdown("<small style='color:#4b6080'>LicenceHunt v2.0<br>Gemini 2.5 Flash</small>",
                     unsafe_allow_html=True)
 
@@ -431,8 +479,6 @@ def main():
     # FASE 1: FILTROS
     # ═══════════════════════════════════════════════════════════════════════
     if st.session_state.fase == "filtros":
-        render_stage_bar(0)
-
         # Cargar historial del Sheet
         saved_in_sheets = []
         if csv_url:
@@ -457,45 +503,6 @@ def main():
                       if st.session_state.cantidad in [5,10,15,20] else 1)
         st.markdown('</div>', unsafe_allow_html=True)
 
-        st.markdown('<div class="section-title">Beneficiarios del acceso gratuito</div>', unsafe_allow_html=True)
-        st.markdown('<div class="filter-card">', unsafe_allow_html=True)
-        ben_sel = st.multiselect("beneficiarios", label_visibility="collapsed",
-            options=list(BENEFICIARY_TYPES.keys()),
-            default=st.session_state.beneficiarios,
-            format_func=lambda x: BENEFICIARY_TYPES[x])
-        st.markdown('</div>', unsafe_allow_html=True)
-
-        st.markdown('<div class="section-title">Tipo de validación académica</div>', unsafe_allow_html=True)
-        st.markdown('<div class="filter-card">', unsafe_allow_html=True)
-        val_sel = st.multiselect("validacion", label_visibility="collapsed",
-            options=list(VALIDATION_TYPES.keys()),
-            default=st.session_state.val_types,
-            format_func=lambda x: f"{VALIDATION_TYPES[x][0]} {VALIDATION_TYPES[x][1]}")
-        for k in list(VALIDATION_TYPES.keys()):
-            icon, name, desc = VALIDATION_TYPES[k]
-            sel = k in (val_sel or [])
-            st.markdown(
-                f'<div style="font-size:.76rem;color:{"#06b6d4" if sel else "#4b6080"};'
-                f'padding:.12rem 0 .12rem .5rem;border-left:2px solid {"#06b6d4" if sel else "#1e2d45"};'
-                f'margin-bottom:.28rem">{icon} <strong>{name}</strong> — {desc}</div>',
-                unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-
-        st.markdown('<div class="section-title">Profundidad de búsqueda</div>', unsafe_allow_html=True)
-        st.markdown('<div class="filter-card">', unsafe_allow_html=True)
-        depth_options = list(DEPTH_LEVELS.keys())
-        depth_sel = st.radio("depth", label_visibility="collapsed",
-            options=depth_options,
-            index=depth_options.index(st.session_state.depth)
-                  if st.session_state.depth in depth_options else 2,
-            format_func=lambda x: f"{DEPTH_LEVELS[x][0]} {DEPTH_LEVELS[x][1]} — {DEPTH_LEVELS[x][2]}")
-        st.markdown('</div>', unsafe_allow_html=True)
-
-        st.markdown('<div class="section-title">Opciones adicionales</div>', unsafe_allow_html=True)
-        st.markdown('<div class="filter-card">', unsafe_allow_html=True)
-        verify_toggle = st.checkbox("✅ Verificar URLs automáticamente", value=True, key="verify_toggle")
-        st.markdown('</div>', unsafe_allow_html=True)
-
         if st.button("🔍 Buscar Licencias Académicas", use_container_width=True):
             if not tema_input.strip():
                 st.error("⚠️ Ingresa un tema de búsqueda."); return
@@ -508,9 +515,6 @@ def main():
 
             st.session_state.tema          = tema_input.strip()
             st.session_state.cantidad      = cantidad_input
-            st.session_state.val_types     = val_sel
-            st.session_state.beneficiarios = ben_sel
-            st.session_state.depth         = depth_sel
             st.session_state.all_results   = []
             st.session_state.bloque_num    = 0
             st.session_state.corrected     = False
@@ -539,7 +543,6 @@ def main():
     # FASE 2: REVISIÓN + CORRECCIÓN
     # ═══════════════════════════════════════════════════════════════════════
     if st.session_state.fase == "revision":
-        render_stage_bar(1)
         model = get_model(api_key)
         lista_preview = st.session_state.search_result.get("lista", [])
 
@@ -623,7 +626,6 @@ def main():
     # FASE 3: RESULTADOS
     # ═══════════════════════════════════════════════════════════════════════
     if st.session_state.fase == "resultados":
-        render_stage_bar(3)
         model      = get_model(api_key)
         all_results= st.session_state.all_results
         cantidad   = st.session_state.cantidad
@@ -740,7 +742,10 @@ def main():
         with col_nueva:
             if st.button("🔄 Nueva búsqueda", use_container_width=True, key="btn_nueva"):
                 for k, v in DEFAULTS.items():
+                    if k in SIDEBAR_WIDGET_KEYS:
+                        continue  # se resetean en el próximo run (ver _reset_filters)
                     st.session_state[k] = v if not isinstance(v, set) else set()
+                st.session_state["_reset_filters"] = True
                 st.session_state.fase = "filtros"
                 st.rerun()
 
