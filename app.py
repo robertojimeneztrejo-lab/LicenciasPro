@@ -8,6 +8,7 @@ import urllib.request
 import urllib.error
 import urllib.parse
 from datetime import datetime
+from pypdf import PdfReader
 
 # ─── PAGE CONFIG ─────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -40,8 +41,7 @@ html,body,[data-testid="stAppViewContainer"]{background:var(--ink)!important;fon
 #MainMenu,footer,header{visibility:hidden;}[data-testid="stToolbar"]{display:none;}
 .hero-wrap{position:relative;padding:2.8rem 3.5rem 2.2rem;margin-bottom:2rem;border-radius:20px;overflow:hidden;background:var(--card);border:1px solid var(--border);box-shadow:0 1px 6px rgba(13,43,78,.06);}
 .hero-wrap::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 60% 80% at 90% 20%,rgba(46,95,163,.07) 0%,transparent 60%),radial-gradient(ellipse 40% 60% at 10% 80%,rgba(200,151,58,.05) 0%,transparent 60%);pointer-events:none;}
-.hero-eyebrow{font-family:'Syne',sans-serif;font-size:.68rem;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--teal);margin-bottom:.8rem;display:flex;align-items:center;gap:.5rem;}
-.hero-eyebrow::before{content:'';display:inline-block;width:24px;height:1px;background:var(--teal);}
+.hero-tagline{font-family:'DM Sans',sans-serif;font-size:.72rem;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--teal);margin:0 0 .9rem;}
 .hero-title{font-family:'Syne',sans-serif;font-size:2.8rem;font-weight:800;line-height:1.05;color:var(--bright);margin:0 0 .7rem;letter-spacing:-.02em;}
 .hero-title span{color:var(--gold);}
 .hero-sub{color:var(--muted);font-size:.92rem;max-width:560px;line-height:1.65;}
@@ -277,17 +277,127 @@ def call_gemini(model, prompt, retries=3):
             time.sleep(2 ** attempt)
     return {"error": "Sin respuesta"}
 
+# ─── DOSSIER PDF → TEMAS CLAVE ────────────────────────────────────────────────
+
+def extract_topics_from_pdf(pdf_file, api_key, max_chars=6000):
+    """
+    Extrae texto del PDF (priorizando secciones de temario/plan de estudios si existen)
+    y usa una llamada a Gemini para identificar 3-6 temas/áreas clave de búsqueda.
+    Funciona con dossiers institucionales, temarios de asignaturas o planes de estudio
+    que listan áreas de conocimiento relevantes para encontrar software académico.
+    Devuelve (lista_de_temas, None) en éxito, o (None, mensaje_error) en fallo.
+    """
+    try:
+        reader = PdfReader(pdf_file)
+        all_pages_text = []
+        for page in reader.pages:
+            all_pages_text.append(page.extract_text() or "")
+
+        full_doc = " ".join(all_pages_text)
+        full_doc = re.sub(r"\s+", " ", full_doc).strip()
+
+        if len(full_doc) < 50:
+            return None, "El PDF no contiene texto extraíble (puede ser un escaneo de imagen sin OCR)."
+
+        keywords_priority = ["asignatura", "plan de estudio", "temario", "contenido",
+                              "índice", "syllabus", "módulo", "unidad", "curso", "software", "herramienta"]
+        priority_text = ""
+        other_text = ""
+        for page_text in all_pages_text:
+            low = page_text.lower()
+            if any(k in low for k in keywords_priority):
+                priority_text += " " + page_text
+            else:
+                other_text += " " + page_text
+
+        combined = re.sub(r"\s+", " ", priority_text).strip()
+        if len(combined) < max_chars:
+            filler = re.sub(r"\s+", " ", other_text).strip()
+            combined = (combined + " " + filler)[:max_chars]
+        else:
+            combined = combined[:max_chars]
+
+        if not api_key:
+            return None, "No hay GEMINI_API_KEY configurada en los Secrets."
+
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel("gemini-2.5-flash")
+
+        mini_prompt = f"""Lee el siguiente fragmento de un documento (puede ser un dossier institucional, un plan de estudios, un temario de asignaturas o un programa académico).
+
+Identifica entre 3 y 6 TEMAS O ÁREAS DE CONOCIMIENTO clave que mejor representen el contenido técnico o académico del documento. Estos temas se usarán para buscar software con licencias académicas relacionado, así que deben ser específicos y útiles como término de búsqueda (ej: "diseño CAD", "simulación clínica", "análisis estadístico avanzado", "modelado financiero"), no genéricos como "educación" o "tecnología".
+
+Responde ÚNICAMENTE con un array JSON de strings, sin texto adicional ni bloques de código. Ejemplo de formato: ["tema 1", "tema 2", "tema 3"]
+
+Fragmento del documento:
+{combined}
+
+Temas clave:"""
+
+        try:
+            response = model.generate_content(
+                mini_prompt,
+                generation_config=genai.types.GenerationConfig(temperature=0.2, max_output_tokens=800)
+            )
+        except Exception as api_err:
+            return None, f"Error al llamar a Gemini: {str(api_err)}"
+
+        try:
+            raw = response.text.strip()
+        except Exception:
+            finish_reason = None
+            try:
+                finish_reason = response.candidates[0].finish_reason
+            except Exception:
+                pass
+            return None, f"Gemini no devolvió texto utilizable (finish_reason={finish_reason}). Puede ser un bloqueo de seguridad o respuesta vacía."
+
+        raw_clean = re.sub(r"```json", "", raw)
+        raw_clean = re.sub(r"```", "", raw_clean).strip()
+
+        try:
+            topics = json.loads(raw_clean)
+            if isinstance(topics, list) and topics:
+                return [str(t).strip() for t in topics if str(t).strip()], None
+        except json.JSONDecodeError:
+            match = re.search(r"\[.*\]", raw_clean, re.DOTALL)
+            if match:
+                try:
+                    topics = json.loads(match.group())
+                    if isinstance(topics, list) and topics:
+                        return [str(t).strip() for t in topics if str(t).strip()], None
+                except json.JSONDecodeError:
+                    pass
+
+            rescued = re.findall(r'"([^"]+)"', raw_clean)
+            if rescued:
+                return [s.strip() for s in rescued if s.strip()], None
+
+        return None, f"Gemini respondió pero no en formato JSON esperado. Respuesta cruda: {raw[:300]}"
+
+    except Exception as ex:
+        return None, f"Error inesperado procesando el PDF: {str(ex)}"
+
 # ─── PROMPTS ─────────────────────────────────────────────────────────────────
 
-def build_prompt(tema, val_types, beneficiarios, depth, cantidad, num_inicio, historial):
+def build_prompt(tema, val_types, beneficiarios, depth, cantidad, num_inicio, historial, pdf_topics=None):
     val_desc  = "\n".join([f"  - {VALIDATION_TYPES[v][1]}: {VALIDATION_TYPES[v][2]}" for v in val_types])
     ben_desc  = ", ".join([BENEFICIARY_TYPES[b] for b in beneficiarios])
     depth_desc = DEPTH_LEVELS[depth][2]
     hist_str  = (f"\nNO repetir estas herramientas ya encontradas: {json.dumps(historial, ensure_ascii=False)}"
                  if historial else "")
 
-    return f"""Busca {cantidad} herramientas digitales reales para el área de "{tema}".
+    pdf_topics_block = ""
+    if pdf_topics:
+        ordered_list = "\n".join(f"{i+1}. {t}" for i, t in enumerate(pdf_topics))
+        pdf_topics_block = f"""
+TEMAS DETECTADOS EN EL DOCUMENTO CARGADO (orden de prioridad, el primero pesa más):
+{ordered_list}
+Usa estos temas como ejes principales de búsqueda, en el orden indicado. El tema #1 debe dominar la mayoría de los resultados; los siguientes se usan para diversificar si el primero no genera suficientes coincidencias. Trátalos con el mismo peso que el tema de búsqueda escrito por el usuario, combinándolos si es necesario.
+"""
 
+    return f"""Busca {cantidad} herramientas digitales reales para el área de "{tema}".
+{pdf_topics_block}
 FILTROS OBLIGATORIOS:
 1. De PAGO para el público general.
 2. COMPLETAMENTE GRATUITAS (no descuento) para: {ben_desc}
@@ -312,8 +422,8 @@ Aplica las correcciones. Mismo número de herramientas. Mismo formato JSON.
 def render_hero(total=0, bloques=0, guardadas=0):
     st.markdown(f"""
     <div class="hero-wrap">
-        <div class="hero-eyebrow">LicenceHunt · Academic Software Discovery</div>
-        <h1 class="hero-title">Encuentra <span>Licencias</span><br>Académicas Gratuitas</h1>
+        <h1 class="hero-title">ARIA <span>Licencias</span></h1>
+        <p class="hero-tagline">Alliance Recognition &amp; Intelligence Architecture</p>
         <p class="hero-sub">Buscador de softwares con alto impacto en el desarrollo de la comunidad universitaria
         — filtrado por tipo de validación, beneficiario y profundidad de búsqueda.</p>
         <div class="hero-stats">
@@ -416,6 +526,8 @@ DEFAULTS = {
     "total_guardadas":   0,
     "saved_blocks":      set(),   # set of block indices already saved
     "verify_toggle":     True,
+    "pdf_topics_hidden": None,
+    "trigger_pdf_search": False,
 }
 
 SIDEBAR_WIDGET_KEYS = {"val_types", "beneficiarios", "depth", "verify_toggle"}
@@ -525,7 +637,27 @@ def main():
                       if st.session_state.cantidad in [5,10,15,20] else 1)
         st.markdown('</div>', unsafe_allow_html=True)
 
-        if st.button("🔍 Buscar Licencias Académicas", use_container_width=True):
+        with st.expander("📄 O cargar un dossier o temario en PDF para iniciar la búsqueda automáticamente"):
+            pdf_file = st.file_uploader(
+                "Sube un dossier institucional, temario de asignaturas o plan de estudios (PDF)",
+                type=["pdf"],
+                key="pdf_dossier_uploader",
+                help="Se extrae solo el texto (sin imágenes) para detectar temas de búsqueda — no se envía el PDF completo a Gemini"
+            )
+            if pdf_file is not None:
+                if st.button("🔎 Analizar y buscar", key="detect_topic_btn", use_container_width=True):
+                    with st.spinner("Analizando el documento..."):
+                        detected_topics, error_msg = extract_topics_from_pdf(pdf_file, api_key)
+                    if detected_topics:
+                        st.session_state.pdf_topics_hidden = detected_topics
+                        st.session_state.tema = detected_topics[0]
+                        st.session_state.trigger_pdf_search = True
+                        st.rerun()
+                    else:
+                        st.error(f"No se pudieron identificar temas: {error_msg}")
+
+        if st.button("🔍 Buscar Licencias Académicas", use_container_width=True) or st.session_state.get("trigger_pdf_search"):
+            st.session_state.trigger_pdf_search = False
             if not tema_input.strip():
                 st.error("⚠️ Ingresa un tema de búsqueda."); return
             if not val_sel:
@@ -552,6 +684,7 @@ def main():
                     val_types=val_sel, beneficiarios=ben_sel,
                     depth=depth_sel, cantidad=5,
                     num_inicio=1, historial=st.session_state.historial_nombres,
+                    pdf_topics=st.session_state.get("pdf_topics_hidden"),
                 ))
             if "error" in result:
                 st.error(f"Error: {result['error']}"); return
@@ -620,6 +753,7 @@ def main():
                         depth=st.session_state.depth,
                         cantidad=st.session_state.cantidad,
                         num_inicio=1, historial=hist,
+                        pdf_topics=st.session_state.get("pdf_topics_hidden"),
                     ))
                 if "error" in rf:
                     st.error(f"Error: {rf['error']}"); return
@@ -744,6 +878,7 @@ def main():
                         depth=st.session_state.depth,
                         cantidad=cantidad, num_inicio=next_start,
                         historial=st.session_state.historial_nombres,
+                        pdf_topics=st.session_state.get("pdf_topics_hidden"),
                     ))
                 if "error" in rm:
                     st.error(f"Error: {rm['error']}")
